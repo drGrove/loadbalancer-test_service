@@ -1,0 +1,26 @@
+#cloud-config
+
+coreos:
+  units:
+    - name: loadbalancer.service
+      command: start
+      content: |
+        [Unit]
+        Description=Danny Grove Load Balancer Test
+        Author=Daniel Grove - danny@drgrovellc.com
+        Requires=docker.service
+
+        [Service]
+        User=core
+        ExecStartPre=-/usr/bin/docker kill drgrove/loadbalancer-test
+        ExecStartPre=-/usr/bin/docker rm drgrove/loadbalancer-test
+        ExecStartPre=-/usr/bin/docker pull drgrove/loadbalancer-test
+        ExecStart=/usr/bin/docker run\
+          -e "APP_HOST 0.0.0.0" -e "APP_PORT=8889" \
+          -p 80:8889 \
+          drgrove/loadbalancer-test
+        ExecStop=/usr/bin/docker stop drgrove/loadbalancer-test
+        Restart=always
+
+        [Install]
+        WantedBy=multi-user.target

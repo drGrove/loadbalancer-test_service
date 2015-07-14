@@ -1,0 +1,139 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Load Balancer Test",
+  "Mappings" : {
+      "RegionMap" : {
+
+          "eu-central-1" : {
+              "AMI" : "ami-02211b1f"
+          },
+
+          "ap-northeast-1" : {
+              "AMI" : "ami-22d27b22"
+          },
+
+          "us-gov-west-1" : {
+              "AMI" : "ami-e53a59c6"
+          },
+
+          "sa-east-1" : {
+              "AMI" : "ami-45a62a58"
+          },
+
+          "ap-southeast-2" : {
+              "AMI" : "ami-2b2e6911"
+          },
+
+          "ap-southeast-1" : {
+              "AMI" : "ami-0ef1f15c"
+          },
+
+          "us-east-1" : {
+              "AMI" : "ami-6b1cd400"
+          },
+
+          "us-west-2" : {
+              "AMI" : "ami-f5a5a5c5"
+          },
+
+          "us-west-1" : {
+              "AMI" : "ami-bf8477fb"
+          },
+
+          "eu-west-1" : {
+              "AMI" : "ami-50f4b927"
+          }
+
+      }
+  },
+  "Parameters": {
+    "InstanceType" : {
+      "Description" : "Loadbalancer Instance",
+      "Type" : "String",
+      "Default" : "t2.micro",
+      "ConstraintDescription" : "Must be a valid EC2 HVM instance type."
+    },
+    "ClusterSize": {
+      "Default": "1",
+      "MinValue": "1",
+      "MaxValue": "3",
+      "Description": "Number of instances to run",
+      "Type": "Number"
+    },
+    "AllowSSHFrom": {
+      "Description": "The net block (CIDR) that SSH is available to.",
+      "Default": "0.0.0.0/0",
+      "Type": "String"
+    },
+    "KeyPair" : {
+      "Description" : "The name of an EC2 Key Pair to allow SSH access to the instance.",
+      "Type" : "AWS::EC2::KeyPair::KeyName"
+    }
+  },
+  "Resources": {
+    "CoreOSSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "CoreOS SecurityGroup",
+        "SecurityGroupIngress": [
+          {"IpProtocol": "tcp", "FromPort": "22", "ToPort": "22", "CidrIp":
+          {"Ref": "AllowSSHFrom"}},
+          {"IpProtocol": "tcp", "FromPort": "80", "ToPort": "80", "CidrIp":
+          "0.0.0.0/0"}
+        ]
+      }
+    },
+    "CoreOSServerAutoScale": {
+      "Type": "AWS::AutoScaling::AutoScalingGroup",
+      "Properties": {
+        "AvailabilityZones": {"Fn::GetAZs": ""},
+        "LaunchConfigurationName": {"Ref": "CoreOSServerLaunchConfig"},
+        "MinSize": "1",
+        "MaxSize": "3",
+        "DesiredCapacity": {"Ref": "ClusterSize"},
+        "Tags": [
+            {"Key": "Name", "Value": { "Ref" : "AWS::StackName" }, "PropagateAtLaunch": true}
+        ]
+      }
+    },
+    "CoreOSServerLaunchConfig": {
+      "Type": "AWS::AutoScaling::LaunchConfiguration",
+      "Properties": {
+        "ImageId" : { "Fn::FindInMap" : [ "RegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+        "InstanceType": {"Ref": "InstanceType"},
+        "KeyName": {"Ref": "KeyPair"},
+        "SecurityGroups": [{"Ref": "CoreOSSecurityGroup"}],
+        "UserData" : { "Fn::Base64":
+          { "Fn::Join": [ "", [
+            "#cloud-config\n",
+            "coreos:\n",
+            "  units:\n",
+            "    - name: loadbalancer.service\n",
+            "      command: start\n",
+            "      content: |\n",
+            "        [Unit]\n",
+            "        Description=Danny Grove Load Balancer Test\n",
+            "        Author=Daniel Grove - danny@drgrovellc.com\n",
+            "        Requires=docker.service\n",
+            "\n",
+            "        [Service]\n",
+            "        User=core\n",
+            "        ExecStartPre=-/usr/bin/docker kill drgrove/loadbalancer-test\n",
+            "        ExecStartPre=-/usr/bin/docker rm drgrove/loadbalancer-test\n",
+            "        ExecStartPre=-/usr/bin/docker pull drgrove/loadbalancer-test\n",
+            "        ExecStart=/usr/bin/docker run ",
+            "        -e \"APP_HOST 0.0.0.0\" -e \"APP_PORT=8889\" ",
+            "        -p 80:8889 ",
+            "        drgrove/loadbalancer-test\n",
+            "        ExecStop=/usr/bin/docker stop drgrove/loadbalancer-test\n",
+            "        Restart=always\n",
+            "\n",
+            "        [Install]\n",
+            "        WantedBy=multi-user.target\n"
+            ] ]
+          }
+        }
+      }
+    }
+  }
+}
